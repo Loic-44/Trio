@@ -18,7 +18,7 @@ struct PumpView: View {
     }
 
     private var hourglassIcon: String {
-        if activatedAtDate != nil { return "hourglass" }
+        if activatedAtDate != nil { return "hourglass.badge.plus" }
         guard let expiration = expiresAtDate else { return "hourglass" }
 
         let hoursRemaining = expiration.timeIntervalSince(timerDate) / 3600
