@@ -20,8 +20,6 @@ final class PropertyPersistentFlags {
 
     @PersistedProperty(key: "onboardingCompleted") var onboardingCompleted: Bool?
 
-    @PersistedProperty(key: "onboardingCompletedAt") var onboardingCompletedAt: Date?
-
     @PersistedProperty(key: "diagnosticsSharing") var diagnosticsSharingEnabled: Bool?
 
     @PersistedProperty(key: "lastCleanupDate") var lastCleanupDate: Date?

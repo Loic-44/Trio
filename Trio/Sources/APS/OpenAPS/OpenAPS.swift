@@ -208,40 +208,55 @@ final class OpenAPS {
                 dtos.insert(simulatedBolusDTO, at: 0)
             }
 
+            // FIXME: remove this; for testing only
+//            let datae60minAgo = Date().addingTimeInterval(-3600)
+//            let simulatedResumeDTO = self.createResumeDTO(at: datae60minAgo)
+//            dtos.insert(simulatedResumeDTO, at: 0)
+
             // This condition addresses https://github.com/nightscout/Trio/issues/898
-            // If onboardingCompletedAt is present, we know it is a fresh install,
-            // as we only store this computed timestamp for new Trio users.
-            // Fresh installs usually do not have any pump history, so the first
-            // event after onboarding is typically a PumpResume. Without a preceding
-            // suspend, oref interprets the time between midnight and onboarding as lacking
-            // scheduled basal, so IOB becomes negative. When onboarding completed within
-            // the insulin action duration window, we now find the earliest PumpResume in the
-            // mapped DTOs; if no suspend precedes it, prepend a simulated suspend one
-            // second before onboarding completion. This backdated entry gives oref a safe
-            // baseline, i.e. it assumes profile basal rate in lieue of lacking history,
-            // so net iob of 0
-            if let onboardingCompletedAt = PropertyPersistentFlags.shared.onboardingCompletedAt {
-                let timeSinceOnboarding = Date().timeIntervalSince(onboardingCompletedAt)
+            // Within the last 24h of pump history, resumes can appear
+            // without a preceding suspend (freshly onboarded user, pump reconnection, …).
+            // When a resume occurs inside the DIA window and there is no suspend in the
+            // DIA window (or the remaining 24h window), prepend a simulated suspend event
+            // 1 second before the resume event. This backstop avoids oref starting from a
+            // resume-only state that can drive negative IOB while keeping real history intact.
+            if let pumpSettings = self.storage.retrieve(OpenAPS.Settings.settings, as: PumpSettings.self) {
+                let diaWindowSeconds = (pumpSettings.insulinActionCurve as NSDecimalNumber).doubleValue * 60 * 60
+                let diaWindow: TimeInterval = diaWindowSeconds
                 let oneDaySeconds: TimeInterval = 24 * 60 * 60
+                let now = Date()
 
-                if timeSinceOnboarding <= oneDaySeconds,
-                   let pumpSettings = self.storage.retrieve(
-                       OpenAPS.Settings.settings,
-                       as: PumpSettings.self
-                   )
-                {
-                    let durationOfInsulinActionWindowSeconds = (pumpSettings.insulinActionCurve as NSDecimalNumber)
-                        .doubleValue * 60 * 60
+                let datedDTOs = dtos.compactMap { dto -> (PumpEventDTO, Date)? in
+                    guard let timestamp = dto.timestampDate else { return nil }
+                    return (dto, timestamp)
+                }.sorted { $0.1 < $1.1 }
 
-                    if timeSinceOnboarding <= durationOfInsulinActionWindowSeconds,
-                       let firstResumeIndex = dtos.firstIndex(where: \.isResume)
-                    {
-                        let hasSuspendBeforeResume = dtos[..<firstResumeIndex].contains(where: \.isSuspend)
+                let recentDTOs = datedDTOs.filter { now.timeIntervalSince($0.1) <= oneDaySeconds }
+                if let resumeIndex = recentDTOs.firstIndex(where: { tuple in
+                    tuple.0.isResume && now.timeIntervalSince(tuple.1) <= diaWindow
+                }) {
+                    let resumeDate = recentDTOs[resumeIndex].1
 
-                        if !hasSuspendBeforeResume {
-                            let suspendDate = onboardingCompletedAt.addingTimeInterval(-1)
+                    let hasSuspendInDIAWindowBeforeResume = recentDTOs[..<resumeIndex].contains { element in
+                        element.0.isSuspend && now.timeIntervalSince(element.1) <= diaWindow
+                    }
+
+                    if !hasSuspendInDIAWindowBeforeResume {
+                        let hasSuspendInOlderWindow = recentDTOs.contains { element in
+                            element.0.isSuspend
+                                && now.timeIntervalSince(element.1) > diaWindow
+                                && now.timeIntervalSince(element.1) <= oneDaySeconds
+                        }
+
+                        if !hasSuspendInOlderWindow {
+                            let suspendDate = resumeDate.addingTimeInterval(-1)
                             let suspendDTO = self.createSimulatedSuspendDTO(at: suspendDate)
-                            dtos.insert(suspendDTO, at: 0)
+
+                            let insertionIndex = dtos.firstIndex { dto in
+                                dto.isResume && dto.timestampDate == resumeDate
+                            } ?? 0
+
+                            dtos.insert(suspendDTO, at: insertionIndex)
                         }
                     }
                 }
@@ -313,6 +328,17 @@ final class OpenAPS {
             _type: "Bolus"
         )
         return .bolus(bolusDTO)
+    }
+
+    // FIXME: remove this; for testing only
+    private func createResumeDTO(at date: Date) -> PumpEventDTO {
+        let dateFormatted = PumpEventStored.dateFormatter.string(from: date)
+
+        let resumeDTO = ResumeDTO(
+            id: UUID().uuidString,
+            timestamp: dateFormatted
+        )
+        return .resume(resumeDTO)
     }
 
     private func createSimulatedSuspendDTO(at date: Date) -> PumpEventDTO {

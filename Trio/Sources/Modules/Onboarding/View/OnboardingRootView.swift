@@ -771,7 +771,7 @@ struct OnboardingNavigationButtons: View {
 
         case .completed:
             state.saveOnboardingData()
-            onboardingManager.completeOnboarding(state.isFreshTrioInstall)
+            onboardingManager.completeOnboarding()
             Foundation.NotificationCenter.default.post(name: .onboardingCompleted, object: nil)
 
         default:

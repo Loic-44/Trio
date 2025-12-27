@@ -223,6 +223,25 @@ enum PumpEventDTO: Encodable {
         if case .suspend = self { return true }
         return false
     }
+
+    var timestampDate: Date? {
+        switch self {
+        case let .bolus(dto):
+            return PumpEventStored.dateFormatter.date(from: dto.timestamp)
+        case let .tempBasal(dto):
+            return PumpEventStored.dateFormatter.date(from: dto.timestamp)
+        case let .tempBasalDuration(dto):
+            return PumpEventStored.dateFormatter.date(from: dto.timestamp)
+        case let .suspend(dto):
+            return PumpEventStored.dateFormatter.date(from: dto.timestamp)
+        case let .resume(dto):
+            return PumpEventStored.dateFormatter.date(from: dto.timestamp)
+        case let .rewind(dto):
+            return PumpEventStored.dateFormatter.date(from: dto.timestamp)
+        case let .prime(dto):
+            return PumpEventStored.dateFormatter.date(from: dto.timestamp)
+        }
+    }
 }
 
 // Extension with helper functions to map pump events to DTO objects via uniform masking enum
