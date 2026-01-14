@@ -55,7 +55,7 @@ extension LiveActivityAttributes.ContentState {
             formatter.minimumFractionDigits = 1
             formatter.maximumFractionDigits = 1
         }
-        
+
         let delta = lastGlucose - secondLastGlucose
         return formatter.string(from: delta as NSNumber) ?? "--"
     }
