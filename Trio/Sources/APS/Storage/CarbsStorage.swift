@@ -127,83 +127,46 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
     }
 
     /**
-     Processes fat and protein entries to generate future carb equivalents, ensuring each equivalent is at least 1.0 grams.
+     Converts fat and protein into delayed carb-equivalent entries (FPU handling).
 
-     - The function calculates the equivalent carb dosage size and adjusts the interval to ensure each equivalent is at least 1.0 grams.
-     - Creates future carb entries based on the adjusted carb equivalent size and interval.
+     Behavior:
+
+     - Calculates carb equivalents from fat and protein
+       ((fat × 9 + protein × 4) / 10 × adjustment factor).
+     - Rounds down to whole grams.
+     - Drops values below 10 g.
+     - Caps total equivalents at 99 g.
+     - Splits into up to 3 entries.
+     - Caps each entry at 33 g.
+     - Distributes grams as evenly as possible.
+
+     Timing:
+
+     - First entry is scheduled after the configured delay
+       (default: 60 minutes) from the carb entry timestamp.
+     - Additional entries are spaced 30 minutes apart.
+
+     Example (default):
+
+     - Carb entry at T
+     - 1st equivalent at T + 60 min
+     - 2nd equivalent at T + 90 min
+     - 3rd equivalent at T + 120 min
+
+     Generated entries:
+
+     - Are marked with `isFPU = true`
+     - Contain only carbs (fat and protein set to 0)
+     - Share the same `fpuID` as the original carb entry
 
      - Parameters:
-       - entries: An array of `CarbsEntry` objects representing the carbohydrate entries to be processed.
+       - entries: An array of `CarbsEntry` objects representing the carb equivalent entries to be processed.
        - fat: The amount of fat in the last entry.
        - protein: The amount of protein in the last entry.
        - createdAt: The creation date of the last entry.
 
      - Returns: A tuple containing the array of future carb entries and the total carb equivalents.
      */
-//    private func processFPU(
-//        entries: [CarbsEntry],
-//        fat: Decimal,
-//        protein: Decimal,
-//        createdAt: Date,
-//        actualDate: Date?
-//    ) -> ([CarbsEntry], Decimal) {
-//        let trioSettings = settings.settings
-//        let providerSettings = settingsProvider.settings
-//
-//        let interval = trioSettings.minuteInterval.clamp(to: providerSettings.minuteInterval)
-//        let timeCap = trioSettings.timeCap.clamp(to: providerSettings.timeCap)
-//        let adjustment = trioSettings.individualAdjustmentFactor.clamp(to: providerSettings.individualAdjustmentFactor)
-//        let delay = trioSettings.delay.clamp(to: providerSettings.delay)
-//
-//        let kcal = protein * 4 + fat * 9
-//        let carbEquivalents = (kcal / 10) * adjustment
-//        let fpus = carbEquivalents / 10
-//        var computedDuration = calculateComputedDuration(fpus: fpus, timeCap: timeCap)
-//
-//        var carbEquivalentSize: Decimal = carbEquivalents / computedDuration
-//        carbEquivalentSize /= Decimal(60) / interval
-//
-//        if carbEquivalentSize < 1.0 {
-//            carbEquivalentSize = 1.0
-//            computedDuration = min(carbEquivalents / carbEquivalentSize, timeCap)
-//        }
-//
-//        let roundedEquivalent: Double = round(Double(carbEquivalentSize * 10)) / 10
-//        carbEquivalentSize = Decimal(roundedEquivalent)
-//        var numberOfEquivalents = carbEquivalents / carbEquivalentSize
-//
-//        var useDate = actualDate ?? createdAt
-//        let fpuID = entries.first?.fpuID ?? UUID().uuidString
-//        var futureCarbArray = [CarbsEntry]()
-//        var firstIndex = true
-//
-//        // convert Decimal minutes to TimeInterval in seconds
-//        let delayTimeInterval = TimeInterval(delay * 60)
-//        let intervalTimeInterval = TimeInterval(interval * 60)
-//        while carbEquivalents > 0, numberOfEquivalents > 0 {
-//            useDate = firstIndex ? useDate.addingTimeInterval(delayTimeInterval) : useDate
-//                .addingTimeInterval(intervalTimeInterval)
-//            firstIndex = false
-    // g
-//            let eachCarbEntry = CarbsEntry(
-//                id: UUID().uuidString,
-//                createdAt: createdAt,
-//                actualDate: useDate,
-//                carbs: carbEquivalentSize,
-//                fat: 0,
-//                protein: 0,
-//                note: nil,
-//                enteredBy: CarbsEntry.local,
-//                isFPU: true,
-//                fpuID: fpuID
-//            )
-//            futureCarbArray.append(eachCarbEntry)
-//            numberOfEquivalents -= 1
-//        }
-//
-//        return (futureCarbArray, carbEquivalents)
-//    }
-
     private func processFPU(
         entries: [CarbsEntry],
         fat: Decimal,
@@ -211,14 +174,14 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         createdAt: Date,
         actualDate: Date?
     ) -> ([CarbsEntry], Decimal) {
-        let trio = settings.settings
-        let provider = settingsProvider.settings
+        let trioSettings = settings.settings
+        let providerSettings = settingsProvider.settings
 
-        let adjustment = trio.individualAdjustmentFactor
-            .clamp(to: provider.individualAdjustmentFactor)
+        let adjustment = trioSettings.individualAdjustmentFactor
+            .clamp(to: providerSettings.individualAdjustmentFactor)
 
-        let delayMinutes = trio.delay
-            .clamp(to: provider.delay)
+        let delayMinutes = trioSettings.delay
+            .clamp(to: providerSettings.delay)
 
         // Constraints
         let maxTotalGrams = 99
@@ -266,8 +229,18 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         return (futureEntries, totalScheduled)
     }
 
-    // MARK: - Helpers
+    /**
+     Splits a total carb-equivalent value into multiple integer entries.
 
+     - Returns no entries if `total` is below `minPerEntry`.
+     - Limits output to `maxEntries`.
+     - Caps each entry at `maxPerEntry`.
+     - Distributes grams evenly (difference ≤ 1 g).
+     - Merges or removes entries below `minPerEntry`.
+
+     - Returns:
+       Integer gram values representing the split carb equivalents.
+     */
     private func splitIntoCarbEquivalents(
         total: Int,
         maxEntries: Int,
