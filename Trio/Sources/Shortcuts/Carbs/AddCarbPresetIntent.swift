@@ -46,7 +46,7 @@ struct AddCarbPresetIntent: AppIntent {
     ) var note: String?
 
     @Parameter(
-        title: "Confirm Before logging",
+        title: "Confirm Before Logging",
         description: "If toggled, you will need to confirm before logging",
         default: true
     ) var confirmBeforeApplying: Bool
