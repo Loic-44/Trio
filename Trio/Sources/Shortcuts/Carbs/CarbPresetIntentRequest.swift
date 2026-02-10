@@ -11,7 +11,7 @@ final class CarbPresetIntentRequest: BaseIntentsRequest {
         _ dateDefinedByUser: Bool
     ) async throws -> String {
         guard quantityCarbs >= 0.0 || quantityFat >= 0.0 || quantityProtein >= 0.0 else {
-            return "not adding carbs in Trio"
+            return "Amount must be positive."
         }
 
         let carbs = min(Decimal(quantityCarbs), settingsManager.settings.maxCarbs)
