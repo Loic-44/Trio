@@ -15,24 +15,24 @@ struct AddCarbPresetIntent: AppIntent {
         description: "Quantity of carbs in g",
         controlStyle: .field,
         inclusiveRange: (lowerBound: 0, upperBound: 300),
-    ) var carbQuantity: Double?
         requestValueDialog: IntentDialog(stringLiteral: String(localized: "How many grams of carbs?"))
+    ) var carbQuantity: Int?
 
     @Parameter(
         title: "Quantity Fat",
         description: "Quantity of fat in g",
-        default: 0.0,
+        default: 0,
         inclusiveRange: (0, 300),
-    ) var fatQuantity: Double
         requestValueDialog: IntentDialog(stringLiteral: String(localized: "How many grams of fat?"))
+    ) var fatQuantity: Int
 
     @Parameter(
         title: "Quantity Protein",
         description: "Quantity of Protein in g",
-        default: 0.0,
+        default: 0,
         inclusiveRange: (0, 300),
-    ) var proteinQuantity: Double
         requestValueDialog: IntentDialog(stringLiteral: String(localized: "How many grams of protein?"))
+    ) var proteinQuantity: Int
 
     @Parameter(
         title: "Date",
@@ -71,11 +71,44 @@ struct AddCarbPresetIntent: AppIntent {
 
     @MainActor func perform() async throws -> some ProvidesDialog {
         do {
-            let quantityCarbs: Double
+            let quantityCarbs: Int
             if let cq = carbQuantity {
                 quantityCarbs = cq
             } else {
                 quantityCarbs = try await $carbQuantity.requestValue("How many grams of carbs?")
+            }
+
+            let request = CarbPresetIntentRequest()
+            let maxCarbs = Int(truncating: request.settingsManager.settings.maxCarbs as NSDecimalNumber)
+            let maxFat = Int(truncating: request.settingsManager.settings.maxFat as NSDecimalNumber)
+            let maxProtein = Int(truncating: request.settingsManager.settings.maxProtein as NSDecimalNumber)
+
+            guard quantityCarbs <= maxCarbs else {
+                return .result(
+                    dialog: IntentDialog(
+                        stringLiteral: String(
+                            localized: "Logging Failed: Max Carbs = \(maxCarbs) g"
+                        )
+                    )
+                )
+            }
+            guard proteinQuantity <= maxProtein else {
+                return .result(
+                    dialog: IntentDialog(
+                        stringLiteral: String(
+                            localized: "Logging Failed: Max Protein = \(maxProtein) g"
+                        )
+                    )
+                )
+            }
+            guard fatQuantity <= maxFat else {
+                return .result(
+                    dialog: IntentDialog(
+                        stringLiteral: String(
+                            localized: "Logging Failed: Max Fat = \(maxFat) g"
+                        )
+                    )
+                )
             }
 
             let dateCarbsAdded: Date
@@ -88,16 +121,15 @@ struct AddCarbPresetIntent: AppIntent {
                 dateDefinedByUser = false
             }
 
-            let quantityCarbsName = quantityCarbs.toString()
             if confirmBeforeApplying {
                 try await requestConfirmation(
                     result: .result(
-                        dialog: IntentDialog(stringLiteral: String(localized: "Add \(quantityCarbsName) grams of carbs?"))
+                        dialog: IntentDialog(stringLiteral: String(localized: "Add \(quantityCarbs) grams of carbs?"))
                     )
                 )
             }
 
-            let finalQuantityCarbsDisplay = try await CarbPresetIntentRequest().addCarbs(
+            let finalQuantityCarbsDisplay = try await request.addCarbs(
                 quantityCarbs,
                 fatQuantity,
                 proteinQuantity,
